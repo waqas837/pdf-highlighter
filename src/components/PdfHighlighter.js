@@ -1,6 +1,13 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
   ChevronLeft,
   ChevronRight,
@@ -9,7 +16,7 @@ import {
   FileUp,
   Hand,
   Maximize2,
-  Pencil,
+  Pen,
   SlidersHorizontal,
   Square,
   Trash2,
@@ -84,7 +91,10 @@ function hitShape(px, py, shapes, pad = 0) {
   return null;
 }
 
-const HANDLE_RADIUS = 26;
+function handleHitRadius(zoom) {
+  const z = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, zoom));
+  return Math.max(9, Math.min(20, 24 / z));
+}
 
 function selectionBounds(s) {
   const rw = Math.abs(s.w);
@@ -94,7 +104,8 @@ function selectionBounds(s) {
   return { sbx, sby, srw: rw, srh: rh };
 }
 
-function hitResizeHandle(px, py, s) {
+function hitResizeHandle(px, py, s, zoom) {
+  const r = handleHitRadius(zoom);
   const { sbx: x, sby: y, srw: w, srh: h } = selectionBounds(s);
   const xm = x + w / 2;
   const ym = y + h / 2;
@@ -109,17 +120,17 @@ function hitResizeHandle(px, py, s) {
     { handle: "w", hx: x, hy: ym },
   ];
   for (const p of pts) {
-    if (Math.hypot(px - p.hx, py - p.hy) <= HANDLE_RADIUS) {
+    if (Math.hypot(px - p.hx, py - p.hy) <= r) {
       return p.handle;
     }
   }
   return null;
 }
 
-function hitShapeResizeTarget(px, py, shapes) {
+function hitShapeResizeTarget(px, py, shapes, zoom) {
   for (let i = shapes.length - 1; i >= 0; i--) {
     const s = shapes[i];
-    const h = hitResizeHandle(px, py, s);
+    const h = hitResizeHandle(px, py, s, zoom);
     if (h) return { shape: s, handle: h };
   }
   return null;
@@ -348,13 +359,16 @@ function getShapeHandleCenters(s) {
   ];
 }
 
-function drawSelectionHandles(ctx, s) {
+function drawSelectionHandles(ctx, s, zoom) {
+  const z = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, zoom));
+  const rad = Math.max(2.4, Math.min(5.5, 5 / z));
+  const lw = Math.max(1, Math.min(2, 1.75 / z));
   for (const p of getShapeHandleCenters(s)) {
     ctx.beginPath();
-    ctx.arc(p.x, p.y, 5.5, 0, Math.PI * 2);
+    ctx.arc(p.x, p.y, rad, 0, Math.PI * 2);
     ctx.fillStyle = "#fff";
     ctx.strokeStyle = "#38bdf8";
-    ctx.lineWidth = 2;
+    ctx.lineWidth = lw;
     ctx.fill();
     ctx.stroke();
   }
@@ -396,6 +410,7 @@ export default function PdfHighlighter() {
   const zoomRef = useRef(1);
   const zoomViewportRef = useRef(null);
   const pinchRef = useRef(null);
+  const zoomAdjustRef = useRef(null);
 
   const pageKey = pageNum;
 
@@ -405,6 +420,33 @@ export default function PdfHighlighter() {
   }, [byPage, pageKey, selectedShapeId]);
 
   zoomRef.current = zoom;
+
+  const applyZoomAnchored = useCallback((zNext, clientX, clientY) => {
+    const zOld = zoomRef.current;
+    const z1 = clampZoom(zNext);
+    if (Math.abs(z1 - zOld) < 1e-6) return;
+    zoomAdjustRef.current = { z0: zOld, z1, cx: clientX, cy: clientY };
+    setZoom(z1);
+  }, []);
+
+  useLayoutEffect(() => {
+    const vp = zoomViewportRef.current;
+    const adj = zoomAdjustRef.current;
+    if (!vp || !adj) return;
+    zoomAdjustRef.current = null;
+    const { z0, z1, cx, cy } = adj;
+    const vr = vp.getBoundingClientRect();
+    const sx = vp.scrollLeft + (cx - vr.left);
+    const sy = vp.scrollTop + (cy - vr.top);
+    const ux = sx / z0;
+    const uy = sy / z0;
+    const nextL = ux * z1 - (cx - vr.left);
+    const nextT = uy * z1 - (cy - vr.top);
+    const maxL = Math.max(0, vp.scrollWidth - vp.clientWidth);
+    const maxT = Math.max(0, vp.scrollHeight - vp.clientHeight);
+    vp.scrollLeft = Math.max(0, Math.min(maxL, nextL));
+    vp.scrollTop = Math.max(0, Math.min(maxT, nextT));
+  }, [zoom]);
 
   useEffect(() => {
     const mq = window.matchMedia("(max-width: 640px)");
@@ -416,6 +458,11 @@ export default function PdfHighlighter() {
 
   useEffect(() => {
     setZoom(1);
+    const vp = zoomViewportRef.current;
+    if (vp) {
+      vp.scrollLeft = 0;
+      vp.scrollTop = 0;
+    }
   }, [pageKey]);
 
   const setLayer = useCallback((updater) => {
@@ -452,10 +499,11 @@ export default function PdfHighlighter() {
         ctx.setLineDash([6, 4]);
         ctx.lineJoin = "round";
         ctx.strokeStyle = "rgba(56, 189, 248, 0.95)";
-        ctx.lineWidth = 2.5;
+        const z = Math.max(ZOOM_MIN, zoom);
+        ctx.lineWidth = Math.max(1, Math.min(3, 2.35 / z));
         strokeShapeOutline(ctx, sel);
         ctx.setLineDash([]);
-        drawSelectionHandles(ctx, sel);
+        drawSelectionHandles(ctx, sel, zoom);
         ctx.restore();
       }
     }
@@ -467,11 +515,11 @@ export default function PdfHighlighter() {
     if (d && d.type === "penPreview" && d.points?.length >= 2) {
       drawSmoothStroke(ctx, d.points, d.color, d.width);
     }
-  }, [pageKey, cssSize.w, cssSize.h, selectedShapeId, tool]);
+  }, [pageKey, cssSize.w, cssSize.h, selectedShapeId, tool, zoom]);
 
   useEffect(() => {
     redrawOverlay();
-  }, [redrawOverlay, byPage, pageKey, cssSize]);
+  }, [redrawOverlay, byPage, pageKey, cssSize, zoom]);
 
   const renderPdfPage = useCallback(async (doc, num) => {
     const pdfCanvas = pdfCanvasRef.current;
@@ -585,7 +633,12 @@ export default function PdfHighlighter() {
         const d = dist(e.touches[0], e.touches[1]);
         const { d0, z0 } = pinchRef.current;
         if (d0 > 4) {
-          setZoom(clampZoom(z0 * (d / d0)));
+          const z1 = clampZoom(z0 * (d / d0));
+          const cx =
+            (e.touches[0].clientX + e.touches[1].clientX) / 2;
+          const cy =
+            (e.touches[0].clientY + e.touches[1].clientY) / 2;
+          applyZoomAnchored(z1, cx, cy);
         }
       }
     };
@@ -607,7 +660,7 @@ export default function PdfHighlighter() {
       el.removeEventListener("touchend", onTouchEnd);
       el.removeEventListener("touchcancel", onTouchEnd);
     };
-  }, [pdfDoc, pageNum]);
+  }, [pdfDoc, pageNum, applyZoomAnchored]);
 
   const handleWheelZoom = useCallback(
     (e) => {
@@ -615,10 +668,12 @@ export default function PdfHighlighter() {
       if (e.ctrlKey || e.metaKey) {
         e.preventDefault();
         const mult = e.deltaY > 0 ? 1 / ZOOM_STEP : ZOOM_STEP;
-        setZoom((z) => clampZoom(z * mult));
+        const zOld = zoomRef.current;
+        const z1 = clampZoom(zOld * mult);
+        applyZoomAnchored(z1, e.clientX, e.clientY);
       }
     },
-    [pdfDoc, cssSize.w],
+    [pdfDoc, cssSize.w, applyZoomAnchored],
   );
 
   useEffect(() => {
@@ -630,12 +685,28 @@ export default function PdfHighlighter() {
   }, [pdfDoc, cssSize.w, cssSize.h, handleWheelZoom]);
 
   const zoomOut = useCallback(() => {
-    setZoom((z) => clampZoom(z / ZOOM_STEP));
-  }, []);
+    const vp = zoomViewportRef.current;
+    if (vp && pdfDoc && cssSize.w > 0) {
+      const vr = vp.getBoundingClientRect();
+      const cx = vr.left + vr.width / 2;
+      const cy = vr.top + vr.height / 2;
+      applyZoomAnchored(zoomRef.current / ZOOM_STEP, cx, cy);
+    } else {
+      setZoom((z) => clampZoom(z / ZOOM_STEP));
+    }
+  }, [applyZoomAnchored, pdfDoc, cssSize.w]);
 
   const zoomIn = useCallback(() => {
-    setZoom((z) => clampZoom(z * ZOOM_STEP));
-  }, []);
+    const vp = zoomViewportRef.current;
+    if (vp && pdfDoc && cssSize.w > 0) {
+      const vr = vp.getBoundingClientRect();
+      const cx = vr.left + vr.width / 2;
+      const cy = vr.top + vr.height / 2;
+      applyZoomAnchored(zoomRef.current * ZOOM_STEP, cx, cy);
+    } else {
+      setZoom((z) => clampZoom(z * ZOOM_STEP));
+    }
+  }, [applyZoomAnchored, pdfDoc, cssSize.w]);
 
   const zoomPct = Math.round(zoom * 100);
 
@@ -673,6 +744,13 @@ export default function PdfHighlighter() {
       setPageNum(1);
       setByPage({});
       setZoom(1);
+      requestAnimationFrame(() => {
+        const vp = zoomViewportRef.current;
+        if (vp) {
+          vp.scrollLeft = 0;
+          vp.scrollTop = 0;
+        }
+      });
       setSelectedShapeId(null);
       setMoreOpen(false);
       setStatus(`Page 1 of ${doc.numPages}`);
@@ -711,7 +789,7 @@ export default function PdfHighlighter() {
         selectedShapeId &&
         L.shapes.find((s) => s.id === selectedShapeId);
       if (curSel) {
-        const h = hitResizeHandle(x, y, curSel);
+        const h = hitResizeHandle(x, y, curSel, zoom);
         if (h) {
           resizeRef.current = {
             id: curSel.id,
@@ -746,7 +824,7 @@ export default function PdfHighlighter() {
     } else if (tool === "resize") {
       setSelectedShapeId(null);
       const L = byPage[pageKey] || emptyPage();
-      const target = hitShapeResizeTarget(x, y, L.shapes);
+      const target = hitShapeResizeTarget(x, y, L.shapes, zoom);
       if (target) {
         const s = target.shape;
         resizeRef.current = {
@@ -1140,7 +1218,7 @@ export default function PdfHighlighter() {
             <Circle size={18} />,
             "Draw a circle or oval highlight",
           )}
-          {toolBtn("pen", "Pen", <Pencil size={18} />, "Draw freehand with the pen")}
+          {toolBtn("pen", "Pen", <Pen size={18} />, "Draw freehand with the pen")}
           {toolBtn(
             "eraser",
             "Rubber",
@@ -1158,22 +1236,23 @@ export default function PdfHighlighter() {
           </button>
         </div>
 
+        <div className="color-strip colors" aria-label="Colors">
+          {COLORS.map((c) => (
+            <button
+              key={c}
+              type="button"
+              className={`swatch ${color === c ? "on" : ""}`}
+              style={{ background: c }}
+              onClick={() => setColor(c)}
+              aria-label={`Color ${c}`}
+            />
+          ))}
+        </div>
+
         {pdfDoc ? (
         <div
           className={`controls-row controls-row--dense controls-row--collapsible${!moreOpen ? " controls-row--closed" : ""}`}
         >
-          <div className="colors" aria-label="Colors">
-            {COLORS.map((c) => (
-              <button
-                key={c}
-                type="button"
-                className={`swatch ${color === c ? "on" : ""}`}
-                style={{ background: c }}
-                onClick={() => setColor(c)}
-                aria-label={`Color ${c}`}
-              />
-            ))}
-          </div>
           <div className="slider-label slider-label--with-stepper">
             <span className="slider-label-text">Highlight</span>
             <div className="opacity-stepper" aria-label="Highlight opacity">
@@ -1298,6 +1377,7 @@ export default function PdfHighlighter() {
                 {tool === "select" && selectedShape
                   ? (() => {
                       const b = selectionBounds(selectedShape);
+                      const invZ = 1 / Math.max(ZOOM_MIN, zoom);
                       return (
                         <>
                           <button
@@ -1307,7 +1387,8 @@ export default function PdfHighlighter() {
                               position: "absolute",
                               left: b.sbx + b.srw,
                               top: b.sby,
-                              transform: "translate(-50%, -50%)",
+                              transform: `translate(-50%, -50%) scale(${invZ})`,
+                              transformOrigin: "center center",
                             }}
                             onClick={(e) => {
                               e.preventDefault();
@@ -1317,7 +1398,11 @@ export default function PdfHighlighter() {
                             onPointerDown={(e) => e.stopPropagation()}
                             aria-label="Remove this highlight"
                           >
-                            <X size={22} strokeWidth={2.5} aria-hidden />
+                            <X
+                              size={compact ? 16 : 20}
+                              strokeWidth={2.25}
+                              aria-hidden
+                            />
                           </button>
                           <div
                             className="shape-controls-bar"
@@ -1325,7 +1410,8 @@ export default function PdfHighlighter() {
                               position: "absolute",
                               left: b.sbx + b.srw / 2,
                               top: b.sby + b.srh + 8,
-                              transform: "translateX(-50%)",
+                              transform: `translateX(-50%) scale(${invZ})`,
+                              transformOrigin: "center top",
                             }}
                             onPointerDown={(e) => e.stopPropagation()}
                           >

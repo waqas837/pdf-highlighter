@@ -218,6 +218,40 @@
   display: none;
 }
 
+.color-strip {
+  display: flex;
+  flex-wrap: nowrap;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  gap: 0.3rem;
+  padding: 0.28rem 0.45rem;
+  background: #0f172a;
+  border-bottom: 1px solid #1e293b;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+
+.color-strip::-webkit-scrollbar {
+  display: none;
+}
+
+.color-strip .swatch {
+  width: 28px;
+  height: 28px;
+}
+
+.pdf-app--compact .color-strip {
+  padding: 0.22rem 0.35rem;
+  gap: 0.25rem;
+}
+
+.pdf-app--compact .color-strip .swatch {
+  width: 26px;
+  height: 26px;
+}
+
 .tool-btn {
   display: inline-flex;
   flex-direction: row;
@@ -322,16 +356,6 @@
   height: 0.65rem;
 }
 
-.controls-row--dense:not(.controls-row--closed) .swatch {
-  width: 22px;
-  height: 22px;
-}
-
-.controls-row--dense:not(.controls-row--closed) .swatch.on {
-  outline-width: 2px;
-  outline-offset: 1px;
-}
-
 .slider-label-text {
   display: block;
   margin-bottom: 0;
@@ -419,10 +443,10 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 44px;
-  height: 44px;
-  min-width: 44px;
-  min-height: 44px;
+  width: 40px;
+  height: 40px;
+  min-width: 40px;
+  min-height: 40px;
   padding: 0;
   border: none;
   border-radius: 50%;
@@ -434,11 +458,18 @@
   z-index: 6;
 }
 
+.pdf-app--compact .shape-remove-btn {
+  width: 34px;
+  height: 34px;
+  min-width: 34px;
+  min-height: 34px;
+}
+
 .shape-controls-bar {
   display: flex;
   align-items: center;
-  gap: 0.2rem;
-  padding: 0.2rem 0.35rem;
+  gap: 0.15rem;
+  padding: 0.15rem 0.28rem;
   border-radius: 999px;
   background: rgba(15, 23, 42, 0.92);
   border: 1px solid #475569;
@@ -447,20 +478,32 @@
   touch-action: manipulation;
 }
 
+.pdf-app--compact .shape-controls-bar {
+  gap: 0.12rem;
+  padding: 0.12rem 0.22rem;
+}
+
 .shape-ctl-btn {
-  width: 36px;
-  height: 36px;
-  min-width: 36px;
+  width: 32px;
+  height: 32px;
+  min-width: 32px;
   padding: 0;
   border: none;
   border-radius: 50%;
   background: #334155;
   color: #f1f5f9;
-  font-size: 1.15rem;
+  font-size: 1rem;
   font-weight: 700;
   line-height: 1;
   cursor: pointer;
   touch-action: manipulation;
+}
+
+.pdf-app--compact .shape-ctl-btn {
+  width: 28px;
+  height: 28px;
+  min-width: 28px;
+  font-size: 0.92rem;
 }
 
 .shape-ctl-btn:active {
@@ -468,12 +511,17 @@
 }
 
 .shape-ctl-value {
-  font-size: 0.72rem;
+  font-size: 0.68rem;
   font-variant-numeric: tabular-nums;
   font-weight: 700;
   color: #e2e8f0;
-  min-width: 2.5rem;
+  min-width: 2.25rem;
   text-align: center;
+}
+
+.pdf-app--compact .shape-ctl-value {
+  font-size: 0.62rem;
+  min-width: 2rem;
 }
 
 .opacity-stepper {
