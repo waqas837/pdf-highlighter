@@ -1,0 +1,9 @@
+---
+description: Use descriptive git commit messages; always push when user asks
+alwaysApply: true
+---
+
+# Git commits and push
+
+- **Commit messages**: Never use a generic message like `update` unless the user explicitly asks for it. Write a **short, useful** message that states **what** changed and **why** when it matters (e.g. `fix pinch zoom scroll anchoring`, `refactor PDF zoom to viewport re-render`).
+- **Push**: When the user asks to push, run `git add .`, commit with that useful message, then `git push`.
