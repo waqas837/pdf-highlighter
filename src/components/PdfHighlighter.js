@@ -1,13 +1,6 @@
 "use client";
 
-import {
-  useCallback,
-  useEffect,
-  useLayoutEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ChevronLeft,
   ChevronRight,
@@ -91,9 +84,10 @@ function hitShape(px, py, shapes, pad = 0) {
   return null;
 }
 
-function handleHitRadius(zoom) {
-  const z = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, zoom));
-  return Math.max(9, Math.min(20, 24 / z));
+const HANDLE_HIT_PX = 14;
+
+function handleHitRadius() {
+  return HANDLE_HIT_PX;
 }
 
 function selectionBounds(s) {
@@ -104,8 +98,8 @@ function selectionBounds(s) {
   return { sbx, sby, srw: rw, srh: rh };
 }
 
-function hitResizeHandle(px, py, s, zoom) {
-  const r = handleHitRadius(zoom);
+function hitResizeHandle(px, py, s) {
+  const r = handleHitRadius();
   const { sbx: x, sby: y, srw: w, srh: h } = selectionBounds(s);
   const xm = x + w / 2;
   const ym = y + h / 2;
@@ -127,10 +121,10 @@ function hitResizeHandle(px, py, s, zoom) {
   return null;
 }
 
-function hitShapeResizeTarget(px, py, shapes, zoom) {
+function hitShapeResizeTarget(px, py, shapes) {
   for (let i = shapes.length - 1; i >= 0; i--) {
     const s = shapes[i];
-    const h = hitResizeHandle(px, py, s, zoom);
+    const h = hitResizeHandle(px, py, s);
     if (h) return { shape: s, handle: h };
   }
   return null;
@@ -359,10 +353,9 @@ function getShapeHandleCenters(s) {
   ];
 }
 
-function drawSelectionHandles(ctx, s, zoom) {
-  const z = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, zoom));
-  const rad = Math.max(2.4, Math.min(5.5, 5 / z));
-  const lw = Math.max(1, Math.min(2, 1.75 / z));
+function drawSelectionHandles(ctx, s) {
+  const rad = 5;
+  const lw = 2;
   for (const p of getShapeHandleCenters(s)) {
     ctx.beginPath();
     ctx.arc(p.x, p.y, rad, 0, Math.PI * 2);
@@ -375,6 +368,28 @@ function drawSelectionHandles(ctx, s, zoom) {
 }
 
 const emptyPage = () => ({ shapes: [], strokes: [] });
+
+function scaleAllPagesByRatio(prev, ratio) {
+  const out = {};
+  for (const key of Object.keys(prev)) {
+    const L = prev[key];
+    out[key] = {
+      shapes: L.shapes.map((s) => ({
+        ...s,
+        x: s.x * ratio,
+        y: s.y * ratio,
+        w: s.w * ratio,
+        h: s.h * ratio,
+      })),
+      strokes: L.strokes.map((st) => ({
+        ...st,
+        width: st.width * ratio,
+        points: st.points.map((p) => ({ x: p.x * ratio, y: p.y * ratio })),
+      })),
+    };
+  }
+  return out;
+}
 
 export default function PdfHighlighter() {
   const wrapRef = useRef(null);
@@ -410,7 +425,10 @@ export default function PdfHighlighter() {
   const zoomRef = useRef(1);
   const zoomViewportRef = useRef(null);
   const pinchRef = useRef(null);
-  const zoomAdjustRef = useRef(null);
+  const pendingZoomScrollRef = useRef(null);
+  const cssSizeRef = useRef({ w: 0, h: 0 });
+  const lastCanvasSizeRef = useRef({ w: 0, h: 0 });
+  const didZoomFromUiRef = useRef(false);
 
   const pageKey = pageNum;
 
@@ -421,38 +439,43 @@ export default function PdfHighlighter() {
 
   zoomRef.current = zoom;
 
+  useEffect(() => {
+    cssSizeRef.current = cssSize;
+  }, [cssSize]);
+
   const applyZoomAnchored = useCallback((zNext, clientX, clientY) => {
     const zOld = zoomRef.current;
     const z1 = clampZoom(zNext);
     if (Math.abs(z1 - zOld) < 1e-6) return;
-    zoomAdjustRef.current = { z0: zOld, z1, cx: clientX, cy: clientY };
+    const ratio = z1 / zOld;
+    const cs = cssSizeRef.current;
+    const vp = zoomViewportRef.current;
+    if (cs.w > 0 && cs.h > 0 && vp) {
+      const vr = vp.getBoundingClientRect();
+      const sx = vp.scrollLeft + (clientX - vr.left);
+      const sy = vp.scrollTop + (clientY - vr.top);
+      const W0 = cs.w;
+      const H0 = cs.h;
+      const fracX = sx / W0;
+      const fracY = sy / H0;
+      const baseW = W0 / zOld;
+      const baseH = H0 / zOld;
+      pendingZoomScrollRef.current = {
+        fracX,
+        fracY,
+        cx: clientX,
+        cy: clientY,
+        z1,
+        baseW,
+        baseH,
+      };
+    } else {
+      pendingZoomScrollRef.current = null;
+    }
+    didZoomFromUiRef.current = true;
+    setByPage((prev) => scaleAllPagesByRatio(prev, ratio));
     setZoom(z1);
   }, []);
-
-  useLayoutEffect(() => {
-    const vp = zoomViewportRef.current;
-    const adj = zoomAdjustRef.current;
-    if (!vp || !adj) return;
-    zoomAdjustRef.current = null;
-    const { z0, z1, cx, cy } = adj;
-
-    const applyScroll = () => {
-      const vr = vp.getBoundingClientRect();
-      const sx = vp.scrollLeft + (cx - vr.left);
-      const sy = vp.scrollTop + (cy - vr.top);
-      const ux = sx / z0;
-      const uy = sy / z0;
-      const nextL = ux * z1 - (cx - vr.left);
-      const nextT = uy * z1 - (cy - vr.top);
-      const maxL = Math.max(0, vp.scrollWidth - vp.clientWidth);
-      const maxT = Math.max(0, vp.scrollHeight - vp.clientHeight);
-      vp.scrollLeft = Math.max(0, Math.min(maxL, nextL));
-      vp.scrollTop = Math.max(0, Math.min(maxT, nextT));
-    };
-
-    applyScroll();
-    requestAnimationFrame(applyScroll);
-  }, [zoom]);
 
   useEffect(() => {
     const mq = window.matchMedia("(max-width: 640px)");
@@ -463,6 +486,8 @@ export default function PdfHighlighter() {
   }, []);
 
   useEffect(() => {
+    pendingZoomScrollRef.current = null;
+    lastCanvasSizeRef.current = { w: 0, h: 0 };
     setZoom(1);
     const vp = zoomViewportRef.current;
     if (vp) {
@@ -505,11 +530,10 @@ export default function PdfHighlighter() {
         ctx.setLineDash([6, 4]);
         ctx.lineJoin = "round";
         ctx.strokeStyle = "rgba(56, 189, 248, 0.95)";
-        const z = Math.max(ZOOM_MIN, zoom);
-        ctx.lineWidth = Math.max(1, Math.min(3, 2.35 / z));
+        ctx.lineWidth = 2.5;
         strokeShapeOutline(ctx, sel);
         ctx.setLineDash([]);
-        drawSelectionHandles(ctx, sel, zoom);
+        drawSelectionHandles(ctx, sel);
         ctx.restore();
       }
     }
@@ -541,8 +565,9 @@ export default function PdfHighlighter() {
         120,
         (wrap?.clientWidth || window.innerWidth) - 24,
       );
-      const scale = Math.max(0.5, Math.min(maxW / base.width, 4));
-      const viewport = page.getViewport({ scale });
+      const fitScale = Math.max(0.5, Math.min(maxW / base.width, 4));
+      const z = zoomRef.current;
+      const viewport = page.getViewport({ scale: fitScale * z });
 
       const dpr = window.devicePixelRatio || 1;
       const cssW = viewport.width;
@@ -573,7 +598,41 @@ export default function PdfHighlighter() {
       });
       await task.promise;
 
+      const prevCanvas = lastCanvasSizeRef.current;
+      if (prevCanvas.w > 0 && prevCanvas.h > 0) {
+        const rx = cssW / prevCanvas.w;
+        if (Math.abs(rx - 1) > 1e-4 && !didZoomFromUiRef.current) {
+          setByPage((p) => scaleAllPagesByRatio(p, rx));
+        }
+      }
+      didZoomFromUiRef.current = false;
+      lastCanvasSizeRef.current = { w: cssW, h: cssH };
+
       setCssSize({ w: cssW, h: cssH });
+
+      const pending = pendingZoomScrollRef.current;
+      if (pending) {
+        pendingZoomScrollRef.current = null;
+        requestAnimationFrame(() => {
+          const vp = zoomViewportRef.current;
+          if (!vp) return;
+          const { fracX, fracY, cx, cy, baseW, baseH, z1 } = pending;
+          const W1 = baseW * z1;
+          const H1 = baseH * z1;
+          const vr = vp.getBoundingClientRect();
+          const apply = () => {
+            const maxL = Math.max(0, vp.scrollWidth - vp.clientWidth);
+            const maxT = Math.max(0, vp.scrollHeight - vp.clientHeight);
+            const nextL = fracX * W1 - (cx - vr.left);
+            const nextT = fracY * H1 - (cy - vr.top);
+            vp.scrollLeft = Math.max(0, Math.min(maxL, nextL));
+            vp.scrollTop = Math.max(0, Math.min(maxT, nextT));
+          };
+          apply();
+          requestAnimationFrame(apply);
+        });
+      }
+
       setStatus(`Page ${num} of ${doc.numPages}`);
     } catch (err) {
       console.error(err);
@@ -594,7 +653,7 @@ export default function PdfHighlighter() {
   useEffect(() => {
     if (!pdfDoc) return;
     renderPdfPage(pdfDoc, pageNum);
-  }, [pdfDoc, pageNum, renderPdfPage]);
+  }, [pdfDoc, pageNum, zoom, renderPdfPage]);
 
   useEffect(() => {
     if (!pdfDoc) return;
@@ -603,7 +662,7 @@ export default function PdfHighlighter() {
     };
     window.addEventListener("resize", onResize);
     return () => window.removeEventListener("resize", onResize);
-  }, [pdfDoc, pageNum, renderPdfPage]);
+  }, [pdfDoc, pageNum, zoom, renderPdfPage]);
 
   /** Pinch-zoom on the scroll viewport (native-style: incremental scale + focal point). */
   useEffect(() => {
@@ -794,7 +853,7 @@ export default function PdfHighlighter() {
         selectedShapeId &&
         L.shapes.find((s) => s.id === selectedShapeId);
       if (curSel) {
-        const h = hitResizeHandle(x, y, curSel, zoom);
+        const h = hitResizeHandle(x, y, curSel);
         if (h) {
           resizeRef.current = {
             id: curSel.id,
@@ -829,7 +888,7 @@ export default function PdfHighlighter() {
     } else if (tool === "resize") {
       setSelectedShapeId(null);
       const L = byPage[pageKey] || emptyPage();
-      const target = hitShapeResizeTarget(x, y, L.shapes, zoom);
+      const target = hitShapeResizeTarget(x, y, L.shapes);
       if (target) {
         const s = target.shape;
         resizeRef.current = {
@@ -1404,8 +1463,8 @@ export default function PdfHighlighter() {
             <div
               className="pdf-zoom-sheet"
               style={{
-                width: Math.max(1, Math.ceil(Math.max(1, cssSize.w) * zoom)),
-                height: Math.max(1, Math.ceil(Math.max(1, cssSize.h) * zoom)),
+                width: Math.max(1, cssSize.w),
+                height: Math.max(1, cssSize.h),
               }}
             >
               <div
@@ -1414,8 +1473,6 @@ export default function PdfHighlighter() {
                   position: "relative",
                   width: Math.max(1, cssSize.w),
                   height: Math.max(1, cssSize.h),
-                  transform: `scale(${zoom})`,
-                  transformOrigin: "top left",
                 }}
               >
                 <div
@@ -1438,7 +1495,6 @@ export default function PdfHighlighter() {
                 {tool === "select" && selectedShape
                   ? (() => {
                       const b = selectionBounds(selectedShape);
-                      const invZ = 1 / Math.max(ZOOM_MIN, zoom);
                       return (
                         <>
                           <button
@@ -1448,8 +1504,7 @@ export default function PdfHighlighter() {
                               position: "absolute",
                               left: b.sbx + b.srw,
                               top: b.sby,
-                              transform: `translate(-50%, -50%) scale(${invZ})`,
-                              transformOrigin: "center center",
+                              transform: "translate(-50%, -50%)",
                             }}
                             onClick={(e) => {
                               e.preventDefault();
@@ -1471,8 +1526,7 @@ export default function PdfHighlighter() {
                               position: "absolute",
                               left: b.sbx + b.srw / 2,
                               top: b.sby + b.srh + 8,
-                              transform: `translateX(-50%) scale(${invZ})`,
-                              transformOrigin: "center top",
+                              transform: "translateX(-50%)",
                             }}
                             onPointerDown={(e) => e.stopPropagation()}
                           >
