@@ -388,7 +388,7 @@ export default function PdfHighlighter() {
   const [tool, setTool] = useState("select");
   const [selectedShapeId, setSelectedShapeId] = useState(null);
   const [color, setColor] = useState(COLORS[0]);
-  const [penSize, setPenSize] = useState(4);
+  const [penSize, setPenSize] = useState(8);
   const [eraserSize, setEraserSize] = useState(24);
   const [fillOpacity, setFillOpacity] = useState(0.38);
   const [status, setStatus] = useState("Open a PDF to start.");
@@ -435,17 +435,23 @@ export default function PdfHighlighter() {
     if (!vp || !adj) return;
     zoomAdjustRef.current = null;
     const { z0, z1, cx, cy } = adj;
-    const vr = vp.getBoundingClientRect();
-    const sx = vp.scrollLeft + (cx - vr.left);
-    const sy = vp.scrollTop + (cy - vr.top);
-    const ux = sx / z0;
-    const uy = sy / z0;
-    const nextL = ux * z1 - (cx - vr.left);
-    const nextT = uy * z1 - (cy - vr.top);
-    const maxL = Math.max(0, vp.scrollWidth - vp.clientWidth);
-    const maxT = Math.max(0, vp.scrollHeight - vp.clientHeight);
-    vp.scrollLeft = Math.max(0, Math.min(maxL, nextL));
-    vp.scrollTop = Math.max(0, Math.min(maxT, nextT));
+
+    const applyScroll = () => {
+      const vr = vp.getBoundingClientRect();
+      const sx = vp.scrollLeft + (cx - vr.left);
+      const sy = vp.scrollTop + (cy - vr.top);
+      const ux = sx / z0;
+      const uy = sy / z0;
+      const nextL = ux * z1 - (cx - vr.left);
+      const nextT = uy * z1 - (cy - vr.top);
+      const maxL = Math.max(0, vp.scrollWidth - vp.clientWidth);
+      const maxT = Math.max(0, vp.scrollHeight - vp.clientHeight);
+      vp.scrollLeft = Math.max(0, Math.min(maxL, nextL));
+      vp.scrollTop = Math.max(0, Math.min(maxT, nextT));
+    };
+
+    applyScroll();
+    requestAnimationFrame(applyScroll);
   }, [zoom]);
 
   useEffect(() => {
@@ -599,31 +605,29 @@ export default function PdfHighlighter() {
     return () => window.removeEventListener("resize", onResize);
   }, [pdfDoc, pageNum, renderPdfPage]);
 
+  /** Pinch-zoom on the scroll viewport (native-style: incremental scale + focal point). */
   useEffect(() => {
-    const el = overlayRef.current;
-    if (!el || !pdfDoc) return;
+    const vp = zoomViewportRef.current;
+    if (!vp || !pdfDoc || cssSize.w <= 0) return;
 
     const dist = (a, b) =>
       Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
 
-    const cancelDrawGesture = () => {
+    const cancelActiveDraw = () => {
       penPointsRef.current = null;
       draftRef.current = null;
       moveRef.current = null;
       resizeRef.current = null;
       setActiveResizeHandle(null);
       eraserActiveRef.current = false;
-      setSelectedShapeId(null);
     };
 
     const onTouchStart = (e) => {
       if (e.touches.length === 2) {
-        pinchRef.current = {
-          d0: dist(e.touches[0], e.touches[1]),
-          z0: zoomRef.current,
-        };
+        const d = dist(e.touches[0], e.touches[1]);
+        pinchRef.current = { lastD: Math.max(d, 1) };
         setIsPinching(true);
-        cancelDrawGesture();
+        cancelActiveDraw();
       }
     };
 
@@ -631,9 +635,11 @@ export default function PdfHighlighter() {
       if (e.touches.length === 2 && pinchRef.current) {
         e.preventDefault();
         const d = dist(e.touches[0], e.touches[1]);
-        const { d0, z0 } = pinchRef.current;
-        if (d0 > 4) {
-          const z1 = clampZoom(z0 * (d / d0));
+        const { lastD } = pinchRef.current;
+        if (lastD > 2 && d > 2) {
+          const factor = d / lastD;
+          const z1 = clampZoom(zoomRef.current * factor);
+          pinchRef.current.lastD = d;
           const cx =
             (e.touches[0].clientX + e.touches[1].clientX) / 2;
           const cy =
@@ -650,17 +656,17 @@ export default function PdfHighlighter() {
       }
     };
 
-    el.addEventListener("touchstart", onTouchStart, { passive: true });
-    el.addEventListener("touchmove", onTouchMove, { passive: false });
-    el.addEventListener("touchend", onTouchEnd);
-    el.addEventListener("touchcancel", onTouchEnd);
+    vp.addEventListener("touchstart", onTouchStart, { passive: true, capture: true });
+    vp.addEventListener("touchmove", onTouchMove, { passive: false, capture: true });
+    vp.addEventListener("touchend", onTouchEnd, { capture: true });
+    vp.addEventListener("touchcancel", onTouchEnd, { capture: true });
     return () => {
-      el.removeEventListener("touchstart", onTouchStart);
-      el.removeEventListener("touchmove", onTouchMove);
-      el.removeEventListener("touchend", onTouchEnd);
-      el.removeEventListener("touchcancel", onTouchEnd);
+      vp.removeEventListener("touchstart", onTouchStart, { capture: true });
+      vp.removeEventListener("touchmove", onTouchMove, { capture: true });
+      vp.removeEventListener("touchend", onTouchEnd, { capture: true });
+      vp.removeEventListener("touchcancel", onTouchEnd, { capture: true });
     };
-  }, [pdfDoc, pageNum, applyZoomAnchored]);
+  }, [pdfDoc, pageNum, applyZoomAnchored, cssSize.w, cssSize.h]);
 
   const handleWheelZoom = useCallback(
     (e) => {
@@ -777,7 +783,6 @@ export default function PdfHighlighter() {
 
   const onPointerDown = (e) => {
     if (!pdfDoc || !overlayRef.current || loadingPdf) return;
-    e.preventDefault();
     const overlay = overlayRef.current;
     const { x, y } = getPos(e);
     const fill = hexToRgba(color, fillOpacity);
@@ -806,7 +811,7 @@ export default function PdfHighlighter() {
         }
       }
       if (!capture) {
-        const hit = hitShape(x, y, L.shapes, 12);
+        const hit = hitShape(x, y, L.shapes, compact ? 16 : 12);
         if (hit) {
           setSelectedShapeId(hit.id);
           moveRef.current = {
@@ -862,6 +867,7 @@ export default function PdfHighlighter() {
     }
 
     if (capture) {
+      e.preventDefault();
       overlay.setPointerCapture(e.pointerId);
     }
   };
@@ -878,9 +884,19 @@ export default function PdfHighlighter() {
 
   const onPointerMove = (e) => {
     if (!pdfDoc || loadingPdf) return;
+    if (tool === "pen" && penPointsRef.current) e.preventDefault();
+    if (tool === "eraser" && eraserActiveRef.current) e.preventDefault();
+    const d0 = draftRef.current;
+    if (
+      d0?.type === "shape" &&
+      (tool === "rectangle" || tool === "ellipse")
+    ) {
+      e.preventDefault();
+    }
     const { x, y } = getPos(e);
 
     if (tool === "select" && moveRef.current) {
+      e.preventDefault();
       const m = moveRef.current;
       const dx = x - m.ox;
       const dy = y - m.oy;
@@ -897,6 +913,7 @@ export default function PdfHighlighter() {
       (tool === "select" || tool === "resize") &&
       resizeRef.current
     ) {
+      e.preventDefault();
       const r = resizeRef.current;
       const next = applyResize(r.handle, r.start, x, y);
       setLayer((L) => ({
@@ -1054,9 +1071,25 @@ export default function PdfHighlighter() {
     setPageNum((p) => Math.min(pageCount || 1, p + 1));
 
   const pickTool = (id) => {
-    if (id !== "select") setSelectedShapeId(null);
+    if (id !== "select" && id !== "resize") setSelectedShapeId(null);
     setTool(id);
   };
+
+  const applySwatchColor = useCallback(
+    (hex) => {
+      setColor(hex);
+      if (!selectedShapeId) return;
+      setLayer((L) => ({
+        ...L,
+        shapes: L.shapes.map((s) => {
+          if (s.id !== selectedShapeId) return s;
+          const a = readShapeOpacity(s);
+          return { ...s, hexColor: hex, fill: hexToRgba(hex, a) };
+        }),
+      }));
+    },
+    [selectedShapeId, setLayer],
+  );
 
   const toolBtn = (id, ariaLabel, icon, titleText) => (
     <button
@@ -1081,6 +1114,14 @@ export default function PdfHighlighter() {
     if (tool === "resize") return "crosshair";
     return "crosshair";
   })();
+
+  const overlayTouchAction =
+    tool === "pen" ||
+    tool === "eraser" ||
+    tool === "rectangle" ||
+    tool === "ellipse"
+      ? "none"
+      : "pan-x pan-y";
 
   return (
     <div className={`pdf-app${compact ? " pdf-app--compact" : ""}`}>
@@ -1243,11 +1284,30 @@ export default function PdfHighlighter() {
               type="button"
               className={`swatch ${color === c ? "on" : ""}`}
               style={{ background: c }}
-              onClick={() => setColor(c)}
+              onClick={() => applySwatchColor(c)}
               aria-label={`Color ${c}`}
             />
           ))}
         </div>
+
+        {pdfDoc ? (
+          <div className="pen-size-strip" aria-label="Pen size">
+            <span className="pen-size-strip-label">Pen size</span>
+            <span className="pen-size-strip-value">{penSize}px</span>
+            <input
+              type="range"
+              className="pen-size-strip-range"
+              min={2}
+              max={56}
+              step={1}
+              value={penSize}
+              onChange={(e) => setPenSize(Number(e.target.value))}
+              aria-valuemin={2}
+              aria-valuemax={56}
+              aria-valuenow={penSize}
+            />
+          </div>
+        ) : null}
 
         {pdfDoc ? (
         <div
@@ -1294,7 +1354,7 @@ export default function PdfHighlighter() {
             <input
               type="range"
               min={2}
-              max={28}
+              max={56}
               step={1}
               value={penSize}
               onChange={(e) => setPenSize(Number(e.target.value))}
@@ -1330,7 +1390,8 @@ export default function PdfHighlighter() {
             )}
             {compact && (
               <p className="placeholder-hint">
-                Select → move or ×. Rubber = pen only.
+                One finger drags the page to scroll; pinch zooms. Hand tool: tap
+                a highlight to move it. Colors change a selected highlight.
               </p>
             )}
           </div>
@@ -1355,9 +1416,6 @@ export default function PdfHighlighter() {
                   height: Math.max(1, cssSize.h),
                   transform: `scale(${zoom})`,
                   transformOrigin: "top left",
-                  transition: isPinching
-                    ? "none"
-                    : "transform 0.22s cubic-bezier(0.25, 0.46, 0.45, 0.94)",
                 }}
               >
                 <div
@@ -1367,7 +1425,10 @@ export default function PdfHighlighter() {
                   <canvas
                     ref={overlayRef}
                     className="draw-layer"
-                    style={{ cursor: overlayCursor }}
+                    style={{
+                      cursor: overlayCursor,
+                      touchAction: overlayTouchAction,
+                    }}
                     onPointerDown={onPointerDown}
                     onPointerMove={onPointerMove}
                     onPointerUp={onPointerUp}
