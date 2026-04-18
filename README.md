@@ -31,13 +31,21 @@ You can check out [the Next.js GitHub repository](https://github.com/vercel/next
 
 ## Android (Capacitor, local device — not Play Store)
 
-Prerequisites: [Android Studio](https://developer.android.com/studio), USB debugging enabled on the phone (or an emulator).
+**Prerequisites:** Android SDK (command-line tools are enough), **platform-tools** on your `PATH` so `adb` works, **`ANDROID_HOME`** set, USB debugging on the phone, device connected (check with `adb devices`).
 
-1. Build the static web app and copy it into the Android project: `npm run build:android`
-2. Open the native project: `npm run android` (opens Android Studio)
-3. In Android Studio: select your device → **Run** (green play). For a debug APK: **Build → Build Bundle(s) / APK(s) → Build APK(s)** — install the APK from `android/app/build/outputs/apk/` on your phone.
+### CLI only (no Android Studio)
 
-After every web change, run `npm run build:android` again before rebuilding the app.
+1. Plug in the phone (or start an emulator).
+2. Run: **`npm run android:deploy`**  
+   This runs `next build` → Capacitor sync → `gradlew assembleDebug` → `adb install -r` for the debug APK.
+
+Optional: **`npm run android:run`** — same sync, then Capacitor’s CLI builds and installs (also uses Gradle + `adb`).
+
+### Optional: Android Studio
+
+`npm run android` opens the project in Android Studio if you prefer the GUI.
+
+After web/UI changes, run **`npm run android:deploy`** again (or `build:android` then Gradle) before reinstalling.
 
 ## Deploy on Vercel
 

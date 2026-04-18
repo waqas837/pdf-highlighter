@@ -8,7 +8,9 @@
     "start": "NODE_ENV=production node server.js",
     "lint": "next lint",
     "build:android": "next build && npx cap sync android",
-    "android": "npx cap open android"
+    "android": "npx cap open android",
+    "android:deploy": "node scripts/android-deploy.cjs",
+    "android:run": "npm run build:android && npx cap run android"
   },
   "dependencies": {
     "@capacitor/android": "^6.2.0",
