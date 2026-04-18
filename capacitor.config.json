@@ -1,0 +1,8 @@
+{
+  "appId": "com.pdfhighlighter.app",
+  "appName": "PDF Highlighter",
+  "webDir": "out",
+  "server": {
+    "androidScheme": "https"
+  }
+}

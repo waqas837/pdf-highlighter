@@ -29,6 +29,16 @@ To learn more about Next.js, take a look at the following resources:
 
 You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js/) - your feedback and contributions are welcome!
 
+## Android (Capacitor, local device — not Play Store)
+
+Prerequisites: [Android Studio](https://developer.android.com/studio), USB debugging enabled on the phone (or an emulator).
+
+1. Build the static web app and copy it into the Android project: `npm run build:android`
+2. Open the native project: `npm run android` (opens Android Studio)
+3. In Android Studio: select your device → **Run** (green play). For a debug APK: **Build → Build Bundle(s) / APK(s) → Build APK(s)** — install the APK from `android/app/build/outputs/apk/` on your phone.
+
+After every web change, run `npm run build:android` again before rebuilding the app.
+
 ## Deploy on Vercel
 
 The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
