@@ -67,8 +67,11 @@
   box-shadow: 0 2px 12px rgba(0, 0, 0, 0.35);
 }
 
-.pdf-app--compact .slider-label {
-  width: 68px;
+.pdf-app--compact .controls-row--dense:not(.controls-row--closed) .slider-label,
+.pdf-app--compact
+  .controls-row--dense:not(.controls-row--closed)
+  .slider-label--with-stepper {
+  width: auto;
 }
 
 .btn--icon-only {
@@ -202,8 +205,8 @@
   display: flex;
   flex-wrap: nowrap;
   align-items: center;
-  gap: 0.3rem;
-  padding: 0.3rem 0.45rem;
+  gap: 0.28rem;
+  padding: 0.22rem 0.4rem;
   background: #1e293b;
   border-bottom: 1px solid #334155;
   overflow-x: auto;
@@ -222,10 +225,10 @@
   justify-content: center;
   flex-shrink: 0;
   gap: 0;
-  min-width: 44px;
-  width: 44px;
-  min-height: 44px;
-  height: 44px;
+  min-width: 40px;
+  width: 40px;
+  min-height: 40px;
+  height: 40px;
   padding: 0;
   border-radius: 8px;
   border: 1px solid #475569;
@@ -265,6 +268,68 @@
 
 .controls-row--collapsible.controls-row--closed {
   display: none;
+}
+
+.controls-row--dense:not(.controls-row--closed) {
+  flex-wrap: wrap;
+  padding: 0.18rem 0.35rem;
+  gap: 0.25rem 0.4rem;
+  row-gap: 0.2rem;
+}
+
+.controls-row--dense:not(.controls-row--closed) .slider-label,
+.controls-row--dense:not(.controls-row--closed) .slider-label--with-stepper {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 0.2rem;
+  width: auto;
+  min-width: 0;
+  max-width: none;
+  flex: 0 0 auto;
+}
+
+.controls-row--dense:not(.controls-row--closed) .slider-label-text {
+  flex: 0 0 2.85rem;
+  width: 2.85rem;
+  font-size: 0.6rem;
+  line-height: 1.1;
+}
+
+.controls-row--dense:not(.controls-row--closed) .opacity-stepper {
+  margin-bottom: 0;
+}
+
+.controls-row--dense:not(.controls-row--closed) .opacity-stepper-value {
+  min-width: 2rem;
+  font-size: 0.62rem;
+}
+
+.controls-row--dense:not(.controls-row--closed) .btn-step {
+  width: 24px;
+  height: 22px;
+  font-size: 0.8rem;
+}
+
+.controls-row--dense:not(.controls-row--closed) .slider-label input[type="range"],
+.controls-row--dense:not(.controls-row--closed)
+  .slider-label--with-stepper
+  input[type="range"] {
+  width: 56px;
+  min-width: 48px;
+  flex: 0 0 56px;
+  height: 0.65rem;
+}
+
+.controls-row--dense:not(.controls-row--closed) .swatch {
+  width: 22px;
+  height: 22px;
+}
+
+.controls-row--dense:not(.controls-row--closed) .swatch.on {
+  outline-width: 2px;
+  outline-offset: 1px;
 }
 
 .slider-label-text {
@@ -445,8 +510,8 @@
 
 .slider-label--with-stepper {
   width: auto;
-  min-width: 96px;
-  max-width: 120px;
+  min-width: 0;
+  max-width: none;
 }
 
 .placeholder-hint {
